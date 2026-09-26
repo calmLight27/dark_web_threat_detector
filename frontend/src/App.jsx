@@ -211,6 +211,7 @@ export default function App() {
 
       if (response.ok) {
         const data = await response.json();
+        console.log("🚨 REAL BACKEND DATA:", data);
         setScanResult(data);
       }
     } catch (e) {
