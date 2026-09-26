@@ -342,7 +342,7 @@ def scan_onion_target(req: ScanRequest):
         """,
         (
             scan_id,
-            scan_result["onion_domain"],
+            scan_result["onion"],
             clearnet_domain,
             primary_ip,
             fav_hash,
