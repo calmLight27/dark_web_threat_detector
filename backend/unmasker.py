@@ -12,9 +12,17 @@ MOCK_BENCHMARKS = {
         "fault": "Identity validation mismatch / Static Branding overlap"
     },
     "p53lf57qovyuvwsc6xnrppyply3vtqm7l6pcobkmyqsiofyeznfu5uqd.onion": {
-        "clearnet": "propublica.org",
-        "fault": "Mirror certificate leak & matching server banners"
-    }
+            "is_active": True,
+            "leaked_clearnet_domain": "propublica.org",
+            "opsec_fault": "Mirror certificate leak & matching server banners",
+            "confidence_score": 98.5,
+            "status_code": 200,
+            # Add these 4 keys to populate the bottom boxes:
+            "favicon_hash": "-319402123",
+            "clearnet_ips": ["104.18.2.161", "104.18.3.161"],
+            "etag": "W/\"65e89-18c7e6\"",
+            "server": "cloudflare"
+        }
 }
 
 class TorClearnetUnmasker:
