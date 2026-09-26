@@ -353,10 +353,10 @@ def scan_onion_target(req: ScanRequest):
     )
 
     # Add forensic graph nodes
-    onion_node_id = f"onion_{hashlib.md5(scan_result['onion_domain'].encode()).hexdigest()[:8]}"
+    onion_node_id = f"onion_{hashlib.md5(scan_result['onion'].encode()).hexdigest()[:8]}"
     cursor.execute(
         "INSERT OR IGNORE INTO graph_nodes (id, label, name, properties) VALUES (?, ?, ?, ?)",
-        (onion_node_id, "HiddenService", scan_result["onion_domain"], json.dumps({"confidence": confidence})),
+        (onion_node_id, "HiddenService", scan_result["onion"], json.dumps({"confidence": confidence})),
     )
 
     if clearnet_domain:
