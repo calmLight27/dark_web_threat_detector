@@ -398,30 +398,30 @@ export default function App() {
                 <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                   <div>
                     <span className="text-xs font-mono text-cyan-400">UNMASKED ENTITY</span>
-                    <h3 className="text-xl font-bold text-white mt-1">{scanResult.clearnet_domain}</h3>
+                    <h3 className="text-xl font-bold text-white mt-1">{scanResult.clearnet_domain || 'Analysis Failed / Protected'}</h3>
                   </div>
                   <div className="text-right font-mono">
                     <span className="text-xs text-slate-400">Confidence</span>
-                    <div className="text-2xl font-bold text-emerald-400">{scanResult.confidence_score}%</div>
+                    <div className="text-2xl font-bold text-emerald-400">{scanResult.confidence_score || 0}%</div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 font-mono text-xs">
                   <div className="p-4 bg-slate-950 rounded-xl border border-slate-800">
                     <span className="text-slate-400 block mb-1">Favicon mmh3 Hash</span>
-                    <span className="text-white font-bold">{scanResult.favicon_hash}</span>
+                    <span className="text-white font-bold">{scanResult.favicon_hash || 'N/A'}</span>
                   </div>
                   <div className="p-4 bg-slate-950 rounded-xl border border-slate-800">
                     <span className="text-slate-400 block mb-1">Clearnet Public IPs</span>
-                    <span className="text-white font-bold">{scanResult.clearnet_ips.join(', ')}</span>
+                    <span className="text-white font-bold">{scanResult.clearnet_ips?.join(', ') || 'No IPs discovered'}</span>
                   </div>
                   <div className="p-4 bg-slate-950 rounded-xl border border-slate-800">
                     <span className="text-slate-400 block mb-1">HTTP ETag</span>
-                    <span className="text-white font-bold truncate block">{scanResult.etag}</span>
+                    <span className="text-white font-bold truncate block">{scanResult.etag || 'N/A'}</span>
                   </div>
                   <div className="p-4 bg-slate-950 rounded-xl border border-slate-800">
                     <span className="text-slate-400 block mb-1">Server Banner</span>
-                    <span className="text-white font-bold">{scanResult.server}</span>
+                    <span className="text-white font-bold">{scanResult.server || 'Hidden'}</span>
                   </div>
                 </div>
               </div>
