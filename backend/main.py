@@ -123,7 +123,12 @@ def query_neo4j_or_sqlite(limit: int = 100) -> Dict[str, Any]:
         "nodes": [{"id": "node_1", "label": "ThreatActor", "name": "LockBitSupp", "properties": {"tier": "Syndicate"}}],
         "edges": []
     }
-
+@app.get("/")
+@app.head("/")
+def root_health_check():
+    """Satisfies Render.com's uptime health check pings."""
+    return {"status": "DeepTrace API is Live", "version": "1.0.0"}
+    
 @app.get("/api/health")
 def health_check():
     neo4j_configured = bool(NEO4J_URI and NEO4J_PASSWORD)
