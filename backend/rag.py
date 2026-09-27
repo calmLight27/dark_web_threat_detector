@@ -46,9 +46,8 @@ class OSINTKnowledgeRAG:
         self.fallback_file = os.path.join(self.persist_dir, "fallback_knowledge.json")
         self.documents: List[Dict[str, Any]] = []
         self._load()
-        self._seed_default_intelligence()
 
-        # Initialize Google GenAI client for zero-RAM embeddings
+        # 1. Initialize Google GenAI client FIRST
         self.gemini_client = None
         api_key = os.getenv("GEMINI_API_KEY")
         if api_key:
@@ -58,6 +57,9 @@ class OSINTKnowledgeRAG:
                 logger.info("Google GenAI Client initialized for RAG embeddings.")
             except Exception as e:
                 logger.warning(f"Failed to initialize GenAI client: {e}")
+
+        # 2. Seed intelligence SECOND (now that gemini_client exists)
+        self._seed_default_intelligence()
 
     def _load(self):
         if os.path.exists(self.fallback_file):
