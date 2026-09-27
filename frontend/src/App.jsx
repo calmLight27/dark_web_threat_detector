@@ -3,98 +3,40 @@ import {
   ShieldAlert,
   Search,
   Download,
-  Terminal,
   Database,
   Network,
-  Radio,
-  KeyRound,
   Server,
   FileText,
-  Fingerprint,
-  BookOpen,
-  Send,
-  CheckCircle2,
   AlertTriangle,
-  Copy,
-  Check,
-  Globe,
   Clock,
-  ChevronRight,
-  Maximize2,
-  RefreshCw,
-  Sliders,
-  Settings,
-  X,
-  ExternalLink,
-  Layers,
-  ArrowRight,
-  Sparkles,
   Zap,
   Info
 } from 'lucide-react';
 
-// Initial Threat Intelligence Graph Dataset
+// Simplified placeholder graph to show while Neo4j connects
 const INITIAL_GRAPH_NODES = [
-  { id: 'actor_lockbit', label: 'ThreatActor', name: 'LockBitSupp', properties: { origin: 'Eastern Europe', tier: 'Syndicate Leader', status: 'Active' } },
-  { id: 'alias_putin', label: 'ThreatActor', name: 'putin_admin (Forum Alias)', properties: { forum: 'XSS / Exploit.in', registered: '2019' } },
-  { id: 'pgp_key_1', label: 'PGPKey', name: 'PGP-4D89A12B980F', properties: { fingerprint: '984E 4D89 A12B 980F 22C1', created: '2021-04-12' } },
-  { id: 'wallet_btc_1', label: 'CryptoWallet', name: 'bc1q9x...3j4k9', properties: { asset: 'BTC', total_transacted: '412.5 BTC', kyc_leak: 'Binance KYC' } },
-  { id: 'wallet_xmr_1', label: 'CryptoWallet', name: '888tX...77Qp', properties: { asset: 'XMR', note: 'Primary Ransom Deposit' } },
-  { id: 'onion_ddg', label: 'HiddenService', name: 'duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion', properties: { type: 'v3 Onion', port: 80 } },
-  { id: 'clearnet_ddg', label: 'ClearnetDomain', name: 'duckduckgo.com', properties: { asn: 'AS8075 (Microsoft Corp)', country: 'US' } },
-  { id: 'ip_ddg', label: 'ClearnetIP', name: '52.142.124.215', properties: { isp: 'Microsoft Azure', org: 'DuckDuckGo Cloud' } },
-  { id: 'fav_ddg', label: 'FaviconHash', name: 'mmh3:-544118222', properties: { algorithm: 'MurmurHash3', shodan_query: 'http.favicon.hash:-544118222' } },
-  { id: 'onion_ransom', label: 'HiddenService', name: 'lockbit7z2j4p...onion', properties: { type: 'Negotiation Portal' } },
-  { id: 'ip_bulletproof', label: 'ClearnetIP', name: '185.220.101.5', properties: { isp: 'FlokiNET / Bulletproof', city: 'Bucharest' } },
+  { id: 'core', label: 'System', name: 'DeepTrace Core', properties: { status: 'Online' } },
+  { id: 'db', label: 'Database', name: 'Neo4j Graph (Awaiting Data)', properties: { status: 'Pending Sync' } }
 ];
 
 const INITIAL_GRAPH_EDGES = [
-  { id: 'e1', source: 'actor_lockbit', target: 'alias_putin', relationship: 'USES_ALIAS' },
-  { id: 'e2', source: 'actor_lockbit', target: 'pgp_key_1', relationship: 'SIGNS_WITH' },
-  { id: 'e3', source: 'actor_lockbit', target: 'wallet_btc_1', relationship: 'CONTROLS_WALLET' },
-  { id: 'e4', source: 'actor_lockbit', target: 'wallet_xmr_1', relationship: 'RECEIVES_RANSOM' },
-  { id: 'e5', source: 'actor_lockbit', target: 'onion_ransom', relationship: 'OPERATES' },
-  { id: 'e6', source: 'onion_ransom', target: 'ip_bulletproof', relationship: 'UNMASKED_TO' },
-  { id: 'e7', source: 'onion_ddg', target: 'clearnet_ddg', relationship: 'UNMASKED_TO' },
-  { id: 'e8', source: 'clearnet_ddg', target: 'ip_ddg', relationship: 'RESOLVES_TO' },
-  { id: 'e9', source: 'onion_ddg', target: 'fav_ddg', relationship: 'EMITS_FAVICON' },
+  { id: 'init_edge', source: 'core', target: 'db', relationship: 'AWAITING_CONNECTION' }
 ];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [apiBaseUrl, setApiBaseUrl] = useState('https://dark-web-threat-detector.onrender.com/api/');
+  const [apiBaseUrl, setApiBaseUrl] = useState('https://dark-web-threat-detector.onrender.com/api');
   const [showSettings, setShowSettings] = useState(false);
   const [copiedHash, setCopiedHash] = useState(false);
+
+  // Backend wake-up & health state
+  const [backendStatus, setBackendStatus] = useState('checking'); // 'checking' | 'waking' | 'ready'
+  const [wakingElapsed, setWakingElapsed] = useState(0);
 
   // Unmasker Prober State
   const [targetUrl, setTargetUrl] = useState('duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion');
   const [isScanning, setIsScanning] = useState(false);
-  const [scanResult, setScanResult] = useState({
-    onion_domain: 'duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion',
-    gateway_url: 'https://duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion.ws',
-    favicon_hash: -544118222,
-    etag: 'W/"65e89-18c7e6b010"',
-    server: 'nginx/1.24.0',
-    matched_entity: 'DuckDuckGo Inc.',
-    clearnet_domain: 'duckduckgo.com',
-    clearnet_ips: ['52.142.124.215', '40.89.244.237'],
-    asn: 'AS8075 (Microsoft Corp)',
-    confidence_score: 98.5,
-    server_status: 'Protected / 403 Forbidden',
-    ssl_certificate: {
-      subject_cn: 'duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion',
-      issuer: 'DigiCert Inc',
-      san_leak: true,
-      leaked_clearnet_sans: ['duckduckgo.com', '*.duckduckgo.com'],
-      serial: '0C988189D3BA4204B149',
-    },
-    indicators: [
-      'Exact Favicon mmh3 hash (-544118222) matches clearnet duckduckgo.com asset',
-      'SSL Certificate Subject Alternative Name (SAN) explicitly leaks clearnet domain duckduckgo.com',
-      'Identified Clearnet IP routing: 52.142.124.215 (AS8075 Microsoft Corp)',
-      'HTTP ETag cache validation header matches public gateway cluster',
-    ],
-  });
+  const [scanResult, setScanResult] = useState(null);
 
   // RAG State
   const [ragQuery, setRagQuery] = useState('favicon mmh3 Shodan hash');
@@ -109,17 +51,7 @@ export default function App() {
       score: 0.985,
       content:
         'Hidden services frequently reuse corporate or clearnet branding assets without sanitization. By fetching /favicon.ico or icons declared in <link rel="icon">, encoding in Base64 with RFC-2045 line wrapping, and computing signed 32-bit MurmurHash3 (mmh3), analysts can match directly against Shodan http.favicon.hash index to reveal clearnet public IPs, hosting providers, and associated domain names.',
-    },
-    {
-      id: 'tac_002_ssl_san_leak',
-      title: 'X.509 Subject Alternative Name (SAN) Domain Leakage',
-      category: 'Cryptographic Misconfiguration',
-      threat_actor: 'Ransomware Affiliates & Phishing Clusters',
-      mitre: 'T1588.004 - Digital Certificates',
-      score: 0.892,
-      content:
-        'When dark web operators configure HTTPS using Let\'s Encrypt or multi-domain SSL certificates, they often generate a certificate covering both their clearnet domain and their onion gateway mirror. Extracting the x509v3 Subject Alternative Name extension instantly establishes an irrefutable link between an anonymous hidden service and registered clearnet infrastructure.',
-    },
+    }
   ]);
   const [newTacticActor, setNewTacticActor] = useState('VoltTyphoon');
   const [newTacticCategory, setNewTacticCategory] = useState('SOHO Router Proxy Network');
@@ -130,28 +62,48 @@ export default function App() {
   // Graph State
   const [nodes, setNodes] = useState(INITIAL_GRAPH_NODES);
   const [edges, setEdges] = useState(INITIAL_GRAPH_EDGES);
-  const [selectedNode, setSelectedNode] = useState(null);
   const [graphFilter, setGraphFilter] = useState('ALL');
-  const [isDragging, setIsDragging] = useState(null);
   const svgRef = useRef(null);
 
-  // Stylometry State
-  const [suspectText, setSuspectText] = useState(
-    'We pay 1 million dollars for any information leading to FBI agent names! Our affiliate program is the most stable and honest in the world. Contact us via Tox or our onion negotiation chat immediately.'
-  );
-  const [referencePersona, setReferencePersona] = useState('LockBitSupp');
-  const [stylometryResult, setStylometryResult] = useState({
-    fused_confidence_score: 92.4,
-    verdict: 'CONFIRMED / HIGH AFFINITY ATTRIBUTION',
-    candidate: 'LockBitSupp',
-    component_scores: {
-      character_ngram_similarity: 94.2,
-      punctuation_habit_match: 89.0,
-      lexical_syntax_consistency: 91.5,
-      temporal_activity_overlap: 94.0,
-    },
-  });
+  // Poll Render backend to detect cold starts and wake-ups
+  useEffect(() => {
+    let pollInterval;
+    let timerInterval;
 
+    const pingBackend = async () => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+        const res = await fetch(`${apiBaseUrl}/health`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          setBackendStatus('ready');
+          clearInterval(pollInterval);
+          clearInterval(timerInterval);
+        } else {
+          setBackendStatus('waking');
+        }
+      } catch (err) {
+        setBackendStatus('waking');
+      }
+    };
+
+    pingBackend();
+    pollInterval = setInterval(pingBackend, 3500);
+
+    timerInterval = setInterval(() => {
+      setWakingElapsed((prev) => prev + 1);
+    }, 1000);
+
+    return () => {
+      clearInterval(pollInterval);
+      clearInterval(timerInterval);
+    };
+  }, [apiBaseUrl]);
+
+  // Handle circular layout logic for graph nodes
   useEffect(() => {
     setNodes((prevNodes) =>
       prevNodes.map((n, idx) => {
@@ -194,7 +146,7 @@ export default function App() {
       } catch (err) {}
     }
     loadGraphData();
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, backendStatus]);
 
   // Execute /api/scan Endpoint
   const handleExecuteScan = async () => {
@@ -211,11 +163,10 @@ export default function App() {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("🚨 REAL BACKEND DATA:", data);
         setScanResult(data);
       }
     } catch (e) {
-      // Local zero-downtime mock simulation
+      console.error("Scan Failed:", e);
     } finally {
       setIsScanning(false);
     }
@@ -259,29 +210,16 @@ export default function App() {
     }
   };
 
-  // Download PDF Dossier (/api/export)
   const handleDownloadDossier = async (format = 'pdf') => {
-    try {
-      const res = await fetch(`${apiBaseUrl}/export?format=${format}`);
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `DeepTrace_Forensic_Dossier_${Date.now()}.${format === 'pdf' ? 'txt' : 'json'}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } catch (err) {
-      const reportText = `DEEPTRACE FORENSIC REPORT: Target ${scanResult.onion_domain} unmasked to ${scanResult.clearnet_domain} (Favicon mmh3: ${scanResult.favicon_hash})`;
-      const blob = new Blob([reportText], { type: 'text/plain;charset=utf-8' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `DeepTrace_Forensic_Dossier.txt`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    }
+    const reportText = `DEEPTRACE FORENSIC REPORT: Target ${scanResult?.onion || 'Unknown'} unmasked to ${scanResult?.leaked_clearnet_domain || 'Unknown'} (Favicon mmh3: ${scanResult?.favicon_hash || 'N/A'})`;
+    const blob = new Blob([reportText], { type: 'text/plain;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `DeepTrace_Forensic_Dossier.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
 
   const getNodeColor = (label) => {
@@ -292,6 +230,8 @@ export default function App() {
       case 'ClearnetIP': return '#8b5cf6';
       case 'CryptoWallet': return '#f59e0b';
       case 'PGPKey': return '#10b981';
+      case 'System': return '#a855f7';
+      case 'Database': return '#eab308';
       default: return '#ec4899';
     }
   };
@@ -305,6 +245,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      
       {/* Top Threat Intel Bar */}
       <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 py-3.5 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-3">
@@ -323,6 +264,26 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3 text-xs font-mono">
+          {/* Live Status Badge */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-slate-950 border border-slate-800">
+            <span
+              className={`h-2 w-2 rounded-full ${
+                backendStatus === 'ready'
+                  ? 'bg-emerald-400'
+                  : backendStatus === 'waking'
+                  ? 'bg-amber-400 animate-pulse'
+                  : 'bg-slate-500'
+              }`}
+            />
+            <span className="text-slate-300 text-[11px]">
+              {backendStatus === 'ready'
+                ? 'Core & Neo4j Online'
+                : backendStatus === 'waking'
+                ? 'Activating Core...'
+                : 'Connecting...'}
+            </span>
+          </div>
+
           <button
             onClick={() => handleDownloadDossier('pdf')}
             className="px-3.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white flex items-center gap-1.5 transition"
@@ -333,8 +294,28 @@ export default function App() {
         </div>
       </header>
 
+      {/* Render Cold-Start / Database Waking Banner */}
+      {backendStatus === 'waking' && (
+        <div className="bg-amber-950/60 border-b border-amber-500/40 px-6 py-2.5 flex items-center justify-between backdrop-blur font-mono text-xs text-amber-300 transition-all">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+            </span>
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>
+              <strong>Render Backend Activating:</strong> Cloud instance is waking up from idle sleep. Initializing Tor probers & activating Neo4j database ({wakingElapsed}s)...
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-400 hidden sm:inline">
+            Typically completes in 30–50s
+          </span>
+        </div>
+      )}
+
       {/* Main Container */}
       <div className="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col gap-6">
+        
         {/* Navigation Tabs */}
         <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
           <button
@@ -383,11 +364,11 @@ export default function App() {
                   />
                   <button
                     onClick={handleExecuteScan}
-                    disabled={isScanning}
-                    className="px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs flex items-center gap-2"
+                    disabled={isScanning || backendStatus !== 'ready'}
+                    className="px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Search className="w-4 h-4" />
-                    <span>Unmask</span>
+                    <span>{isScanning ? 'Unmasking...' : 'Unmask'}</span>
                   </button>
                 </div>
               </div>
@@ -399,21 +380,18 @@ export default function App() {
                 <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                   <div>
                     <span className="text-xs font-mono text-cyan-400">UNMASKED ENTITY</span>
-                    {/* Updated to check for both leaked_clearnet_domain AND clearnet_domain */}
                     <h3 className="text-xl font-bold text-white mt-1">
                       {scanResult.leaked_clearnet_domain || scanResult.clearnet_domain || 'Analysis Failed / Protected'}
                     </h3>
                   </div>
                   <div className="text-right font-mono">
                     <span className="text-xs text-slate-400">Confidence</span>
-                    {/* Added a dynamic fallback so it shows 98.5% if a domain is found, otherwise 0% */}
                     <div className="text-2xl font-bold text-emerald-400">
                       {scanResult.confidence_score || (scanResult.leaked_clearnet_domain ? 98.5 : 0)}%
                     </div>
                   </div>
                 </div>
 
-                {/* Added an alert block to dynamically show the opsec_fault from the backend */}
                 {scanResult.opsec_fault && (
                   <div className="p-3 bg-red-950/40 border border-red-900/50 rounded-lg flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-red-500" />
@@ -448,7 +426,7 @@ export default function App() {
         {activeTab === 'graph' && (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
             <h3 className="text-sm font-semibold text-white uppercase font-mono mb-4">
-              Threat Actor Relationship Graph (Aliases → PGP Keys → Wallets)
+              Threat Actor Relationship Graph (Neo4j AuraDB)
             </h3>
             <div className="h-[480px] bg-slate-950 rounded-xl border border-slate-800 relative">
               <svg ref={svgRef} width="100%" height="100%" viewBox="0 0 720 480">
@@ -510,7 +488,8 @@ export default function App() {
                 />
                 <button
                   type="submit"
-                  className="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs"
+                  disabled={backendStatus !== 'ready'}
+                  className="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Vectorize & Ingest to ChromaDB
                 </button>
