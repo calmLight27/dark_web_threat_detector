@@ -610,9 +610,11 @@ Timestamp: ${new Date().toISOString()}
                 <span>DEEPTRACE RECONNAISSANCE CONSOLE // LIVE TELEMETRY</span>
               </div>
               {scanLogs.map((log, i) => (
-                <div key={i} className="flex gap-3">
+                <div key={i} className="flex gap-3 animate-in slide-in-from-bottom-2">
                   <span className="text-slate-600">[{new Date().toISOString().split('T')[1].slice(0,-1)}]</span>
-                  <span className={log.includes('[RESOLVED]') ? 'text-cyan-400 font-bold' : log.includes('[FATAL]') ? 'text-red-400' : 'text-green-400'}>{log}</span>
+                  <span className={log?.includes('[RESOLVED]') ? 'text-cyan-400 font-bold' : log?.includes('[FATAL]') ? 'text-red-400' : 'text-green-400'}>
+                    {log || 'Processing...'}
+                  </span>
                 </div>
               ))}
               <div className="animate-pulse flex gap-2 text-green-400">
