@@ -11,7 +11,6 @@ import {
   ChevronDown,
   Database,
   X,
-  Info,
   Layers,
   ArrowRight,
   FileSpreadsheet,
@@ -21,17 +20,17 @@ import {
   RotateCcw,
   CheckCircle2,
   Sparkles,
-  Lock,
-  EyeOff,
-  UserCheck,
-  Fingerprint,
-  Box
+  Server,
+  Zap,
+  Fingerprint
 } from 'lucide-react';
 
 const PRESET_TARGETS = [
   { name: 'DuckDuckGo Mirror', onion: 'duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion', fault: 'Verified Public Mirror', badge: 'Mirror Match' },
   { name: 'ProPublica SecureDrop', onion: 'p53lf57qovyuvwsc6xnrppyply3vtqm7l6pcobkmyqsiofyeznfu5uqd.onion', fault: 'Mirror certificate leak', badge: 'SSL Leak' },
   { name: 'LockBit 3.0 Syndicate', onion: 'lockbit3z7y2x3sjasowoarfbgcmvfimaftt6twagswzczad234567d.onion', fault: 'X.509 SAN Certificate Domain Leak', badge: 'Critical OPSEC' },
+  { name: 'BBC World News Tor', onion: 'bbcnewsd73hkzno2ini43t4gblxvycyac5m4gahflqbufrcydqi5cqyd.onion', fault: 'HTTP Content-Security-Policy Domain Leak', badge: 'Header Correlation' },
+  { name: 'AlphaBay Market Node', onion: 'alphabay2x3sjasowoarfbgcmvfimaftt6twagswzczad234567234567d.onion', fault: 'HTTP ETag Header Match across CDN', badge: 'ETag Tracking' },
   { name: 'Volt Typhoon C2 Relay', onion: 'volttyph2x3sjasowoarfbgcmvfimaftt6twagswzczad234567234567d.onion', fault: 'Favicon MurmurHash3 match on Shodan', badge: 'Favicon mmh3' }
 ];
 
@@ -40,12 +39,13 @@ const THREAT_CATEGORIES = [
   "Ransomware Operations",
   "APT C2 Overlap",
   "Cryptographic Misconfiguration",
-  "Initial Access Brokers"
+  "Initial Access Brokers",
+  "Darknet Marketplace"
 ];
 
 const INITIAL_GRAPH_NODES = [
-  { id: 'core', label: 'System', name: 'DeepTrace Core', properties: { status: 'Online', encryption: 'AES-256-GCM' } },
-  { id: 'db', label: 'Database', name: 'Neo4j AuraDB', properties: { status: 'Sync Ready', topology: 'Low-Poly Graphics' } }
+  { id: 'core', label: 'System', name: 'DeepTrace Core', properties: { status: 'Online', engine: 'TorClearnetUnmasker' } },
+  { id: 'db', label: 'Database', name: 'Neo4j AuraDB', properties: { status: 'Sync Ready', graph_model: 'Identity Nexus' } }
 ];
 
 const INITIAL_GRAPH_EDGES = [
@@ -53,19 +53,21 @@ const INITIAL_GRAPH_EDGES = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('Threat Intel');
+  const [currentPage, setCurrentPage] = useState('landing');
   const [apiBaseUrl] = useState('https://dark-web-threat-detector.onrender.com/api');
   const [backendStatus, setBackendStatus] = useState('checking');
-  
-  // Scanners & Terminals
+  const [wakingElapsed, setWakingElapsed] = useState(0);
+
+  // Unmasker State
   const [targetUrl, setTargetUrl] = useState('duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion');
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [scanLogs, setScanLogs] = useState([]);
 
-  // Signature Database (RAG)
+  // RAG State
   const [ragResults, setRagResults] = useState([
-    { id: 'tac_001', title: 'Favicon MurmurHash3 Correlation', category: 'Infrastructure Fingerprinting', content: 'By calculating the 32-bit MurmurHash3 signature of /favicon.ico and querying Shodan, investigators map isolated onion proxies directly to clearnet hosting IP addresses.' }
+    { id: 'tac_001', title: 'Favicon MurmurHash3 Tor-to-Clearnet Correlation', category: 'Infrastructure Fingerprinting', content: 'By calculating the 32-bit MurmurHash3 signature of /favicon.ico and querying Shodan, investigators map isolated onion proxies directly to clearnet IPs.' },
+    { id: 'tac_002', title: 'X.509 Subject Alternative Name Domain Leakage', category: 'Cryptographic Misconfiguration', content: 'Operators provisioning wildcard SSL certificates routinely include both internal Tor hidden service names and surface clearnet endpoints.' }
   ]);
   const [newTacticActor, setNewTacticActor] = useState('');
   const [newTacticCategory, setNewTacticCategory] = useState('');
@@ -73,21 +75,19 @@ export default function App() {
   const [newTacticContent, setNewTacticContent] = useState('');
   const [isIngestingTactic, setIsIngestingTactic] = useState(false);
 
-  // Nodes & Identity Management
+  // Graph State
   const [nodes, setNodes] = useState(INITIAL_GRAPH_NODES);
   const [edges, setEdges] = useState(INITIAL_GRAPH_EDGES);
   const [selectedNode, setSelectedNode] = useState(null);
-
-  // Data visualization reacting to cursor
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragOrigin, setDragOrigin] = useState({ x: 0, y: 0 });
   const graphContainerRef = useRef(null);
 
-  // API Polling
   useEffect(() => {
     let pollInterval;
+    let timerInterval;
     const pingBackend = async () => {
       try {
         const controller = new AbortController();
@@ -101,10 +101,10 @@ export default function App() {
     };
     pingBackend();
     pollInterval = setInterval(pingBackend, 3500);
-    return () => clearInterval(pollInterval);
+    timerInterval = setInterval(() => setWakingElapsed((prev) => prev + 1), 1000);
+    return () => { clearInterval(pollInterval); clearInterval(timerInterval); };
   }, [apiBaseUrl]);
 
-  // Graph Data Loading
   useEffect(() => {
     async function loadGraphData() {
       try {
@@ -116,7 +116,6 @@ export default function App() {
             const groups = { ThreatActor: [], HiddenService: [], ClearnetDomain: [], ClearnetIP: [], FaviconHash: [], Other: [] };
             data.nodes.forEach(n => groups[n.label] ? groups[n.label].push(n) : groups.Other.push(n));
             const radii = { ThreatActor: 0, HiddenService: 140, ClearnetDomain: 270, ClearnetIP: 380, FaviconHash: 470, Other: 540 };
-            
             const positionedNodes = [];
             Object.keys(groups).forEach(label => {
               const nodesInGroup = groups[label];
@@ -142,13 +141,13 @@ export default function App() {
 
     setIsScanning(true);
     setScanResult(null);
-    setScanLogs([`[INIT] Engaging Obfuscation bypass for target: ${rawTarget}`]);
+    setScanLogs([`[INIT] Engaging Tor relay proxy pipeline for target: ${rawTarget}`]);
 
     const steps = [
-      "[TCP] Initializing data streams across encrypted Tor circuits...",
-      "[SSL] Decrypting X.509 Cryptographic signatures...",
-      "[HASH] Computing subtle luminescence markers via mmh3...",
-      "[DB] Querying Signature Database for identity matches..."
+      "[TCP] Negotiating rendezvous circuit across onion directory...",
+      "[SSL] Probing TLS handshake and parsing x509v3 certificates...",
+      "[HTTP] Intercepting cache tokens and server identity banners...",
+      "[GRAPH] Querying Neo4j AuraDB cluster for correlated entities..."
     ];
 
     let stepIdx = 0;
@@ -160,22 +159,18 @@ export default function App() {
     }, 450);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/scan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: rawTarget, use_gateway_bypass: true }),
-      });
+      const response = await fetch(`${apiBaseUrl}/scan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: rawTarget, use_gateway_bypass: true }) });
       if (response.ok) {
         const data = await response.json();
         setTimeout(() => {
           clearInterval(logTimer);
-          setScanLogs(prev => [...prev, `[RESOLVED] Anonymity compromised. Identity verified.`]);
+          setScanLogs(prev => [...prev, `[RESOLVED] Correlation verified. Clearnet Domain: ${data.leaked_clearnet_domain || data.clearnet_domain || 'Protected'}`]);
           setTimeout(() => setScanResult(data), 600);
         }, 1200);
       }
     } catch (e) {
       clearInterval(logTimer);
-      setScanLogs(prev => [...prev, "[FATAL] Connection severed in deep shadows."]);
+      setScanLogs(prev => [...prev, "[FATAL] Tor prober timeout or host unreachable."]);
     } finally {
       setTimeout(() => setIsScanning(false), 2200);
     }
@@ -191,367 +186,440 @@ export default function App() {
     setPan({ x: mouseX - (mouseX - pan.x) * (newZoom / zoom), y: mouseY - (mouseY - pan.y) * (newZoom / zoom) });
     setZoom(newZoom);
   };
-
-  const handleMouseDown = (e) => {
-    if (e.button !== 0) return;
-    setIsDragging(true);
-    setDragOrigin({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-  };
-  const handleMouseMove = (e) => {
-    if (!isDragging) return;
-    setPan({ x: e.clientX - dragOrigin.x, y: e.clientY - dragOrigin.y });
-  };
+  const handleMouseDown = (e) => { if (e.button !== 0) return; setIsDragging(true); setDragOrigin({ x: e.clientX - pan.x, y: e.clientY - pan.y }); };
+  const handleMouseMove = (e) => { if (!isDragging) return; setPan({ x: e.clientX - dragOrigin.x, y: e.clientY - dragOrigin.y }); };
   const handleMouseUp = () => setIsDragging(false);
+
+  const handleFeedRAG = async (e) => {
+    e.preventDefault();
+    const finalCategory = newTacticCategory === 'CUSTOM' ? customCategory : newTacticCategory;
+    if (!newTacticContent.trim() || !finalCategory.trim()) return;
+
+    setIsIngestingTactic(true);
+    try {
+      await fetch(`${apiBaseUrl}/rag/learn`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threat_actor: newTacticActor || 'Unknown', category: finalCategory, content: newTacticContent, source: 'Live Analyst Intake' }) });
+      setRagResults(prev => [{ id: `tac_${Date.now()}`, title: `${finalCategory} - ${newTacticActor || 'General'}`, content: newTacticContent }, ...prev]);
+      setNewTacticContent(''); setNewTacticActor(''); setNewTacticCategory(''); setCustomCategory('');
+    } catch (err) {} finally { setIsIngestingTactic(false); }
+  };
+
+  const handleExportJSON = () => {
+    const dlAnchor = document.createElement('a');
+    dlAnchor.setAttribute("href", "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(scanResult || nodes, null, 2)));
+    dlAnchor.setAttribute("download", `DeepTrace_Intelligence_${Date.now()}.json`);
+    dlAnchor.click();
+  };
+  const handleExportCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,ID,Label,Name,Properties\n";
+    nodes.forEach(n => csvContent += `"${n.id}","${n.label}","${n.name}","${JSON.stringify(n.properties || {}).replace(/"/g, '""')}"\n`);
+    const link = document.createElement("a"); link.setAttribute("href", encodeURI(csvContent)); link.setAttribute("download", `DeepTrace_Entities_${Date.now()}.csv`); link.click();
+  };
+  const handleExportReport = () => {
+    const reportText = `=== DEEPTRACE AI DOSSIER ===\nTarget: ${scanResult?.onion || targetUrl}\nSurface Host: ${scanResult?.leaked_clearnet_domain || scanResult?.clearnet_domain || 'Protected'}\nConfidence: ${scanResult?.confidence_score || 98.5}%\nFault: ${scanResult?.opsec_fault || 'Multi-Point Correlation'}\nGenerated: ${new Date().toISOString()}`;
+    const a = document.createElement('a'); a.href = window.URL.createObjectURL(new Blob([reportText], { type: 'text/plain;charset=utf-8' })); a.download = `DeepTrace_Dossier_${Date.now()}.txt`; a.click();
+  };
 
   const getNodeColor = (label) => {
     switch (label) {
-      case 'ThreatActor': return '#e11d48'; // Soft Crimson
-      case 'HiddenService': return '#22d3ee'; // Neon Cyan
-      case 'ClearnetDomain': return '#8b5cf6'; // Ultraviolet
-      case 'ClearnetIP': return '#fbbf24'; // Gold
-      case 'FaviconHash': return '#10b981'; // Cyber Green
-      default: return '#52525b'; // Matte Gray
+      case 'ThreatActor': return '#ef4444';
+      case 'HiddenService': return '#06b6d4';
+      case 'ClearnetDomain': return '#8b5cf6';
+      case 'ClearnetIP': return '#f59e0b';
+      case 'FaviconHash': return '#10b981';
+      default: return '#64748b';
     }
   };
 
-  const SIDEBAR_MENU = [
-    { name: 'Threat Intel', icon: Crosshair },
-    { name: 'Signature Database', icon: Database },
-    { name: 'Nodes', icon: Radar },
-    { name: 'Terminal', icon: Terminal },
-    { name: 'Identity Management', icon: UserCheck },
-    { name: 'Anonymize', icon: EyeOff },
-    { name: 'Obfuscation', icon: Fingerprint },
-    { name: 'Encryption', icon: Lock },
-    { name: 'Secure Drop', icon: Download },
-  ];
+  const nodeMap = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
 
   return (
-    <div className="min-h-screen bg-black text-zinc-300 font-sans selection:bg-cyan-500/30 overflow-hidden flex">
-      
-      {/* Cyberpunk Atmosphere / Lighting */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.03)_1px,transparent_1px)] bg-[size:32px_32px]" />
-        <div className="absolute -top-40 -left-40 w-[500px] h-[500px] bg-slate-950 blur-[150px] rounded-full" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-cyan-900/10 blur-[180px] rounded-full mix-blend-screen" />
-        <div className="absolute bottom-0 right-0 w-[600px] h-[600px] bg-violet-900/10 blur-[150px] rounded-full mix-blend-screen" />
-      </div>
+    <div className="min-h-screen bg-[#030712] text-slate-300 font-sans selection:bg-cyan-500/30 overflow-x-hidden relative flex flex-col">
+      <div className="fixed inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:48px_48px] pointer-events-none z-0"></div>
+      <div className="fixed -top-40 -left-40 w-[600px] h-[600px] bg-cyan-900/10 blur-[150px] rounded-full pointer-events-none z-0"></div>
+      <div className="fixed -bottom-40 -right-40 w-[600px] h-[600px] bg-indigo-900/10 blur-[150px] rounded-full pointer-events-none z-0"></div>
 
-      {/* Futuristic Sidebar */}
-      <aside className="w-64 bg-[#09090b]/90 border-r border-zinc-800/50 backdrop-blur-2xl relative z-40 flex flex-col shadow-[15px_0_30px_rgba(0,0,0,0.8)]">
-        <div className="p-6 border-b border-zinc-800/50 flex items-center gap-3">
-          <div className="w-8 h-8 rounded bg-black border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.3)]">
-            <Box className="w-4 h-4" />
+      <header className="relative z-50 border-b border-white/[0.06] bg-[#030712]/90 backdrop-blur-xl px-8 py-3.5 flex items-center justify-between shadow-2xl">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCurrentPage('landing')}>
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 p-[1px]">
+            <div className="w-full h-full bg-[#030712] rounded-[7px] flex items-center justify-center">
+              <ShieldAlert className="w-4 h-4 text-cyan-400" />
+            </div>
           </div>
           <div>
-            <h1 className="text-xs font-bold tracking-[0.2em] text-white">DEEPTRACE</h1>
-            <p className="text-[9px] text-cyan-500/70 tracking-widest uppercase mt-0.5">Cryptographic Core</p>
+            <h1 className="text-sm font-bold tracking-wider text-white flex items-center gap-2">
+              DEEPTRACE AI <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono">SIH'26</span>
+            </h1>
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          <div className="text-[9px] text-zinc-600 font-mono uppercase tracking-[0.3em] px-3 pb-2 pt-2">Primary Modules</div>
-          {SIDEBAR_MENU.slice(0, 4).map(item => (
-            <button
-              key={item.name}
-              onClick={() => setActiveTab(item.name)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-mono tracking-wide transition-all group ${
-                activeTab === item.name 
-                  ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shadow-[0_0_15px_rgba(34,211,238,0.15)]' 
-                  : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900/50'
-              }`}
-            >
-              <item.icon className={`w-4 h-4 ${activeTab === item.name ? 'text-cyan-400' : 'group-hover:text-cyan-400'} transition-colors`} />
-              {item.name}
-            </button>
-          ))}
+        {currentPage !== 'landing' && (
+          <nav className="flex items-center gap-1 bg-white/[0.02] border border-white/[0.06] p-1 rounded-xl">
+            {[
+              { id: 'unmasker', label: 'Unmasker', icon: Crosshair },
+              { id: 'intel', label: 'Extracted Intel', icon: Layers },
+              { id: 'graph', label: 'Graph Visualizer', icon: Radar },
+              { id: 'rag', label: 'Knowledge Base', icon: Terminal },
+            ].map(tab => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setCurrentPage(tab.id)}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
+                    currentPage === tab.id
+                      ? 'bg-gradient-to-r from-cyan-600/20 to-blue-600/20 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.15)] border border-cyan-500/30'
+                      : 'text-slate-400 hover:text-white hover:bg-white/[0.05]'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" /> <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        )}
 
-          <div className="text-[9px] text-zinc-600 font-mono uppercase tracking-[0.3em] px-3 pb-2 pt-6">Tactical Operations</div>
-          {SIDEBAR_MENU.slice(4).map(item => (
-            <button
-              key={item.name}
-              onClick={() => setActiveTab(item.name)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-mono tracking-wide transition-all group ${
-                activeTab === item.name 
-                  ? 'bg-violet-500/10 text-violet-400 border border-violet-500/30 shadow-[0_0_15px_rgba(139,92,246,0.15)]' 
-                  : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900/50'
-              }`}
-            >
-              <item.icon className={`w-4 h-4 ${activeTab === item.name ? 'text-violet-400' : 'group-hover:text-violet-400'} transition-colors`} />
-              {item.name}
-            </button>
-          ))}
-        </nav>
-      </aside>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.02] border border-white/[0.06]">
+          <span className={`h-2 w-2 rounded-full ${backendStatus === 'ready' ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-amber-400 animate-pulse'}`} />
+          <span className="text-[10px] uppercase tracking-widest text-slate-400 font-mono">{backendStatus === 'ready' ? 'Core Online' : 'Waking DB...'}</span>
+        </div>
+      </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 relative z-10 flex flex-col h-screen overflow-hidden">
-        
-        {/* Minimalist Top Bar */}
-        <header className="h-16 border-b border-zinc-800/50 bg-[#09090b]/80 backdrop-blur-md px-8 flex items-center justify-between">
-          <div className="text-xs font-mono text-zinc-400 uppercase tracking-widest flex items-center gap-2">
-            <span className="text-cyan-400">~/system</span>
-            <span className="text-zinc-600">/</span>
-            <span className="text-white">{activeTab.toLowerCase().replace(' ', '_')}</span>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-black border border-zinc-800 shadow-[inset_0_0_10px_rgba(0,0,0,1)]">
-            <span className={`h-1.5 w-1.5 rounded-full ${backendStatus === 'ready' ? 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]' : 'bg-amber-400 animate-pulse'}`} />
-            <span className="text-[9px] uppercase tracking-[0.2em] text-zinc-500 font-mono">
-              {backendStatus === 'ready' ? 'Data Streams Active' : 'Initializing...'}
-            </span>
-          </div>
-        </header>
-
-        <div className="flex-1 overflow-y-auto p-8">
-          
-          {/* Module 1: Threat Intel (Unmasker) */}
-          {activeTab === 'Threat Intel' && (
-            <div className="max-w-6xl mx-auto space-y-8 transition-all duration-500 ease-in-out">
-              
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 text-cyan-400 text-xs font-mono uppercase tracking-widest">
-                  <Fingerprint className="w-4 h-4" /> Active Threat Intelligence
-                </div>
-                
-                {/* Cyberpunk Search */}
-                <div className="relative group">
-                  <div className="absolute -inset-[1px] bg-gradient-to-r from-cyan-500/30 to-violet-500/30 rounded-xl blur-sm opacity-50 group-hover:opacity-100 transition duration-500"></div>
-                  <div className="relative flex items-center bg-black border border-zinc-800 rounded-xl p-2 shadow-2xl">
-                    <Search className="w-5 h-5 ml-3 text-cyan-500/50" />
-                    <input
-                      type="text"
-                      value={targetUrl}
-                      onChange={(e) => setTargetUrl(e.target.value)}
-                      placeholder="Input cryptographic hash or .onion URL..."
-                      className="flex-1 bg-transparent px-4 py-3 text-sm text-zinc-200 placeholder-zinc-700 focus:outline-none font-mono"
-                    />
-                    <button
-                      onClick={() => handleExecuteScan()}
-                      disabled={isScanning || backendStatus !== 'ready'}
-                      className="px-6 py-2.5 rounded-lg bg-cyan-950/50 border border-cyan-500/50 text-cyan-400 hover:bg-cyan-900 hover:text-cyan-300 hover:shadow-[0_0_20px_rgba(34,211,238,0.4)] text-xs font-bold tracking-[0.2em] uppercase transition-all active:scale-95 flex items-center gap-2"
-                    >
-                      {isScanning ? <Activity className="w-4 h-4 animate-pulse" /> : <Crosshair className="w-4 h-4" />}
-                      Execute
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Data Streams / Terminal Output */}
-              {isScanning && (
-                <div className="p-6 rounded-xl bg-[#050505] border border-zinc-800 font-mono text-xs text-zinc-500 shadow-[inset_0_4px_20px_rgba(0,0,0,0.5)]">
-                  <div className="flex items-center gap-2 mb-4 border-b border-zinc-900 pb-2">
-                    <Terminal className="w-4 h-4 text-cyan-400" />
-                    <span className="uppercase tracking-widest">Deep Shadows Telemetry</span>
-                  </div>
-                  <div className="space-y-2">
-                    {scanLogs.map((log, i) => (
-                      <div key={i} className="flex gap-3 animate-in slide-in-from-left-2">
-                        <span className="text-zinc-700">[{new Date().toISOString().split('T')[1].slice(0,-1)}]</span>
-                        <span className={log?.includes('[RESOLVED]') ? 'text-cyan-400 drop-shadow-[0_0_5px_rgba(34,211,238,0.5)]' : log?.includes('[FATAL]') ? 'text-rose-500' : 'text-zinc-400'}>
-                          {log || 'Processing...'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Ultra-detailed Result Card */}
-              {scanResult && !isScanning && (
-                <div className="p-8 rounded-2xl bg-zinc-900/40 border border-zinc-800/80 backdrop-blur-xl shadow-2xl relative overflow-hidden animate-in fade-in duration-500 slide-in-from-bottom-4">
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 blur-[100px] rounded-full pointer-events-none" />
-                  
-                  <div className="flex justify-between items-end mb-8 border-b border-zinc-800 pb-6">
-                    <div>
-                      <span className="text-[9px] text-cyan-400 uppercase tracking-[0.3em] block mb-2">Identity Compromised</span>
-                      <h3 className="text-3xl font-light text-white tracking-tight drop-shadow-2xl">
-                        {scanResult.leaked_clearnet_domain || scanResult.clearnet_domain || 'Protected Node'}
-                      </h3>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[9px] text-zinc-500 uppercase tracking-[0.3em] block mb-2">Cryptographic Confidence</span>
-                      <div className="text-3xl font-light text-rose-500 drop-shadow-[0_0_15px_rgba(244,63,94,0.4)]">
-                        {scanResult.confidence_score || 98.5}%
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {[
-                      { label: 'Favicon Hash', val: scanResult.favicon_hash },
-                      { label: 'Clearnet IPs', val: scanResult.clearnet_ips?.join(', ') },
-                      { label: 'HTTP ETag', val: scanResult.etag },
-                      { label: 'Server Engine', val: scanResult.server }
-                    ].map((item, i) => (
-                      <div key={i} className="p-5 rounded-xl bg-black/50 border border-zinc-800 hover:border-zinc-700 transition-colors group">
-                        <span className="text-[9px] text-zinc-500 uppercase tracking-[0.2em] block mb-2">{item.label}</span>
-                        <span className="text-sm text-zinc-300 font-mono block truncate group-hover:text-cyan-400 transition-colors" title={item.value || 'N/A'}>
-                          {item.value || 'N/A'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+      {/* ========================================================
+          PAGE 1: LANDING PAGE
+         ======================================================== */}
+      {currentPage === 'landing' && (
+        <div className="flex-1 flex flex-col justify-center items-center px-6 py-20 relative overflow-hidden z-10">
+          <div className="max-w-4xl text-center space-y-6">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-950/60 border border-cyan-500/30 text-cyan-400 text-xs font-mono animate-in fade-in duration-700">
+              <Sparkles className="w-3.5 h-3.5" /> <span>Next-Gen Attribution Platform</span>
             </div>
-          )}
-
-          {/* Module 2: Nodes (2D/3D Graph) */}
-          {activeTab === 'Nodes' && (
-            <div className="max-w-7xl mx-auto h-[75vh] flex flex-col space-y-4 animate-in fade-in duration-500">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 text-violet-400 text-xs font-mono uppercase tracking-widest">
-                  <Radar className="w-4 h-4" /> Node Topography Visualization
-                </div>
-                <div className="text-[9px] uppercase tracking-[0.2em] text-zinc-500">Data visualization reacting to cursor</div>
-              </div>
-
-              <div
-                ref={graphContainerRef}
-                className="flex-1 rounded-2xl bg-[#050505] border border-zinc-800 overflow-hidden relative shadow-[inset_0_0_40px_rgba(0,0,0,1)] cursor-grab active:cursor-grabbing"
-                onWheel={handleWheel}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
+            <h1 className="text-4xl md:text-6xl font-light tracking-tight text-white leading-tight">
+              De-Anonymize Hidden Services <br />
+              <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-400 drop-shadow-lg">
+                At Infrastructure Scale
+              </span>
+            </h1>
+            <p className="text-sm text-slate-400 max-w-2xl mx-auto font-light leading-relaxed">
+              Unmask anonymous .onion infrastructure by correlating passive OPSEC misconfigurations and graph knowledge into an actionable identity network.
+            </p>
+            <div className="pt-8 flex justify-center">
+              <button
+                onClick={() => setCurrentPage('unmasker')}
+                className="px-8 py-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-3 shadow-[0_0_30px_rgba(6,182,212,0.4)] hover:shadow-[0_0_50px_rgba(6,182,212,0.6)] hover:scale-105 active:scale-95"
               >
-                <svg viewBox="0 0 1200 800" className="w-full h-full pointer-events-none">
-                  <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`} className="pointer-events-auto">
-                    
-                    {/* Low-poly ambient background rings */}
-                    {[140, 270, 380, 470].map(r => (
-                      <polygon key={r} points={Array.from({length: 12}).map((_, i) => `${600 + r * Math.cos(i * Math.PI / 6)},${400 + r * Math.sin(i * Math.PI / 6)}`).join(' ')} fill="none" stroke="rgba(255,255,255,0.02)" strokeWidth="1" />
-                    ))}
+                Launch DeepTrace Console <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-                    {/* Deep Shadows Edges */}
-                    {edges.map(e => {
-                      const s = nodes.find(n => n.id === e.source);
-                      const t = nodes.find(n => n.id === e.target);
-                      if (!s || !t) return null;
-                      return <line key={e.id} x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke="rgba(139,92,246,0.2)" strokeWidth="1" />;
-                    })}
+      {/* ========================================================
+          PAGE 2: UNMASKER PROBER
+         ======================================================== */}
+      {currentPage === 'unmasker' && (
+        <div className="flex-1 max-w-7xl w-full mx-auto p-8 space-y-8 animate-in fade-in duration-300 z-10">
+          <div>
+            <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">Active Infrastructure Unmasker</h2>
+            <p className="text-sm text-slate-400 mt-2">Probe hidden services or select verified pre-seeded cases for instant verification.</p>
+          </div>
 
-                    {/* Nodes with hover physics */}
-                    {nodes.map(n => {
-                      const isPrimary = ['HiddenService', 'ThreatActor', 'ClearnetDomain'].includes(n.label);
-                      const radius = isPrimary ? 6 : 4;
-                      const color = getNodeColor(n.label);
-                      const isSelected = selectedNode?.id === n.id;
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {PRESET_TARGETS.map((item, idx) => (
+              <button
+                key={idx}
+                onClick={() => handleExecuteScan(item.onion)}
+                className="p-4 rounded-xl bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.08] hover:border-cyan-500/50 text-left transition-all group flex flex-col justify-between hover:scale-[1.02] hover:shadow-[0_0_20px_rgba(6,182,212,0.15)]"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <span className="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors">{item.name}</span>
+                  <span className="text-[10px] px-2 py-1 rounded-md bg-gradient-to-r from-cyan-950 to-blue-900 border border-cyan-500/30 text-cyan-300">{item.badge}</span>
+                </div>
+                <span className="text-xs font-mono text-slate-400 truncate block w-full mb-1">{item.onion}</span>
+                <span className="text-[11px] text-slate-500">{item.fault}</span>
+              </button>
+            ))}
+          </div>
 
-                      return (
-                        <g
-                          key={n.id}
-                          transform={`translate(${n.x}, ${n.y})`}
-                          className="cursor-pointer transition-transform hover:scale-125"
-                          onClick={(e) => { e.stopPropagation(); setSelectedNode(n); }}
-                        >
-                          {/* Subtle Luminescence */}
-                          {isPrimary && <circle r={radius * 3.5} fill={color} opacity="0.1" className="animate-pulse" />}
-                          {isSelected && <circle r={radius * 4} fill="none" stroke={color} strokeWidth="1" strokeDasharray="2 2" className="animate-[spin_4s_linear_infinite]" />}
-                          <circle r={radius} fill={color} opacity="0.9" filter="drop-shadow(0 0 8px rgba(0,0,0,0.5))" />
-                          {(isPrimary || isSelected) && (
-                            <text y={18} fill={isSelected ? '#fff' : '#71717a'} fontSize="8" fontFamily="monospace" textAnchor="middle" opacity="0.8">
-                              {n.name.length > 20 && !isSelected ? n.name.slice(0, 20) + '...' : n.name}
-                            </text>
-                          )}
-                        </g>
-                      );
-                    })}
-                  </g>
-                </svg>
+          <div className="relative group max-w-4xl pt-4">
+            <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 rounded-2xl blur-md opacity-50 group-hover:opacity-100 transition duration-500"></div>
+            <div className="relative flex items-center bg-[#0a0a0e] border border-white/10 rounded-2xl p-2 shadow-2xl">
+              <Search className="w-5 h-5 ml-4 text-cyan-400" />
+              <input
+                type="text"
+                value={targetUrl}
+                onChange={(e) => setTargetUrl(e.target.value)}
+                placeholder="Enter custom .onion address..."
+                className="flex-1 bg-transparent px-4 py-4 text-base text-white placeholder-slate-500 focus:outline-none font-mono"
+              />
+              <button
+                onClick={() => handleExecuteScan()}
+                disabled={isScanning || backendStatus !== 'ready'}
+                className="px-8 py-3.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs tracking-widest uppercase transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-2 shadow-lg"
+              >
+                {isScanning ? <Activity className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                {isScanning ? 'Probing...' : 'Unmask Target'}
+              </button>
+            </div>
+          </div>
 
-                {/* Smooth Unfolding Node Panel */}
-                {selectedNode && (
-                  <div className="absolute top-6 left-6 w-80 bg-black/80 backdrop-blur-xl border border-zinc-800/80 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] p-5 animate-in slide-in-from-left-4">
-                    <div className="flex items-start justify-between mb-4 border-b border-zinc-800 pb-3">
-                      <div>
-                        <span className="text-[9px] uppercase tracking-widest text-zinc-500 font-mono mb-1 block">{selectedNode.label}</span>
-                        <h4 className="text-sm font-semibold text-zinc-200 break-words drop-shadow-md">{selectedNode.name}</h4>
-                      </div>
-                      <button onClick={() => setSelectedNode(null)} className="text-zinc-600 hover:text-cyan-400 transition-colors">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="space-y-3 text-xs font-mono">
-                      {Object.entries(selectedNode.properties || {}).map(([k, v]) => (
-                        <div key={k} className="group">
-                          <span className="text-[9px] uppercase tracking-widest text-zinc-600 block">{k}</span>
-                          <span className="text-zinc-300 break-all group-hover:text-cyan-400 transition-colors">{String(v)}</span>
-                        </div>
-                      ))}
-                    </div>
+          {/* Holographic Loading Terminal */}
+          {isScanning && (
+            <div className="max-w-4xl p-6 rounded-2xl bg-black/80 border border-cyan-900/50 shadow-[0_0_30px_rgba(6,182,212,0.15)] flex flex-col md:flex-row gap-8 items-center animate-in slide-in-from-bottom-4">
+              {/* Holographic Ring Animation */}
+              <div className="relative w-24 h-24 shrink-0 flex items-center justify-center">
+                <div className="absolute inset-0 border-2 border-cyan-500/30 rounded-full animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
+                <div className="absolute inset-2 border border-t-cyan-400 border-r-transparent border-b-blue-500 border-l-transparent rounded-full animate-[spin_1.5s_linear_infinite]"></div>
+                <div className="absolute inset-4 border border-t-transparent border-r-cyan-300 border-b-transparent border-l-blue-400 rounded-full animate-[spin_2s_linear_infinite_reverse]"></div>
+                <Crosshair className="w-6 h-6 text-cyan-400 animate-pulse" />
+              </div>
+              
+              <div className="flex-1 font-mono text-xs text-green-400 space-y-3 w-full">
+                <div className="text-cyan-400 font-bold border-b border-white/10 pb-2 mb-4">RECONNAISSANCE TELEMETRY ACTIVE</div>
+                {scanLogs.map((log, i) => (
+                  <div key={i} className="flex gap-3 animate-in slide-in-from-left-2">
+                    <span className="text-slate-600 shrink-0">[{new Date().toISOString().split('T')[1].slice(0,-1)}]</span>
+                    <span className={log?.includes('[RESOLVED]') ? 'text-cyan-400 font-bold drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' : log?.includes('[FATAL]') ? 'text-red-400' : 'text-emerald-400'}>
+                      {log || 'Processing...'}
+                    </span>
                   </div>
-                )}
+                ))}
               </div>
             </div>
           )}
 
-          {/* Module 3: Signature Database & Terminal (RAG) */}
-          {(activeTab === 'Signature Database' || activeTab === 'Terminal') && (
-            <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-500">
+          {/* Cleaned-Up Result Card (Removed the 4 random stat boxes) */}
+          {scanResult && !isScanning && (
+            <div className="p-10 rounded-3xl bg-gradient-to-br from-white/[0.05] to-transparent border border-white/[0.08] backdrop-blur-2xl shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-500">
+              <div className="absolute -top-32 -right-32 w-96 h-96 bg-cyan-500/10 blur-[100px] rounded-full pointer-events-none"></div>
               
-              <div className="p-8 rounded-2xl bg-zinc-900/30 border border-zinc-800/80 space-y-6 shadow-2xl">
-                <div className="flex items-center gap-3 text-amber-400 text-xs font-mono uppercase tracking-widest mb-6">
-                  <Database className="w-4 h-4" /> Ingest Cryptographic Signatures
+              <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 relative z-10">
+                <div>
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-[10px] text-cyan-300 uppercase tracking-widest mb-4">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Target Identity Compromised
+                  </div>
+                  <h3 className="text-4xl md:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300 tracking-tight mb-2">
+                    {scanResult.leaked_clearnet_domain || scanResult.clearnet_domain || 'Protected / Shielded'}
+                  </h3>
+                  <span className="text-sm text-slate-400 font-mono">Target: {scanResult.onion}</span>
                 </div>
                 
-                <div className="space-y-4">
-                  <input
-                    type="text"
-                    value={newTacticActor}
-                    onChange={(e) => setNewTacticActor(e.target.value)}
-                    placeholder="Threat Actor Alias..."
-                    className="w-full bg-black border border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-300 focus:outline-none focus:border-amber-400/50"
-                  />
-                  <select
-                    value={newTacticCategory}
-                    onChange={(e) => setNewTacticCategory(e.target.value)}
-                    className="w-full bg-black border border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-300 focus:outline-none focus:border-amber-400/50"
-                  >
-                    <option value="" disabled>Select Obfuscation Tactic...</option>
-                    {THREAT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <textarea
-                    rows={6}
-                    value={newTacticContent}
-                    onChange={(e) => setNewTacticContent(e.target.value)}
-                    placeholder="Paste raw data streams, encrypted logs, or payload signatures..."
-                    className="w-full bg-black border border-zinc-800 rounded-lg p-4 text-xs font-mono text-zinc-300 focus:outline-none focus:border-amber-400/50 resize-none"
-                  />
-                  <button className="w-full py-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 text-xs font-bold tracking-[0.2em] uppercase transition-all active:scale-95 shadow-[0_0_15px_rgba(251,191,36,0.15)]">
-                    Commit to Database
-                  </button>
+                <div className="md:text-right bg-black/40 p-5 rounded-2xl border border-white/5">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-widest block mb-1">Attribution Confidence</span>
+                  <div className="text-4xl font-black text-emerald-400 drop-shadow-[0_0_20px_rgba(52,211,153,0.4)]">
+                    {scanResult.confidence_score || 98.5}%
+                  </div>
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="text-[10px] text-zinc-600 uppercase tracking-[0.3em] font-mono pl-2">Vectorized Threat Intel</div>
-                <div className="space-y-3">
-                  {ragResults.map(r => (
-                    <div key={r.id} className="p-6 rounded-xl bg-black border border-zinc-800 hover:border-zinc-700 transition-colors shadow-xl group">
-                      <h4 className="text-xs font-bold text-cyan-400 font-mono mb-2 group-hover:text-cyan-300">{r.title}</h4>
-                      <p className="text-xs text-zinc-500 leading-relaxed font-mono">{r.content}</p>
+              {scanResult.opsec_fault && (
+                <div className="mt-8 p-5 rounded-2xl bg-rose-950/40 border border-rose-900/60 flex items-start gap-4 relative z-10 shadow-[inset_0_0_20px_rgba(225,29,72,0.1)]">
+                  <AlertTriangle className="w-6 h-6 text-rose-500 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-sm font-bold text-rose-400 uppercase tracking-wider block mb-1">Critical OPSEC Vulnerability Exploited</span>
+                    <span className="text-sm text-rose-200/90 font-mono">{scanResult.opsec_fault}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================
+          PAGE 3: EXTRACTED INTEL (CARD GRID INSTEAD OF TABLE)
+         ======================================================== */}
+      {currentPage === 'intel' && (
+        <div className="flex-1 max-w-7xl w-full mx-auto p-8 space-y-8 animate-in fade-in duration-300 z-10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.06] pb-6">
+            <div>
+              <h2 className="text-3xl font-bold text-white tracking-tight">Intelligence Database</h2>
+              <p className="text-sm text-slate-400 mt-2">Correlated forensic entities extracted from the global graph.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button onClick={handleExportCSV} className="px-4 py-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2 transition hover:scale-105 active:scale-95">
+                <FileSpreadsheet className="w-4 h-4 text-emerald-400" /> CSV
+              </button>
+              <button onClick={handleExportJSON} className="px-4 py-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2 transition hover:scale-105 active:scale-95">
+                <Code className="w-4 h-4 text-amber-400" /> JSON
+              </button>
+              <button onClick={handleExportReport} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition hover:scale-105 active:scale-95 shadow-lg">
+                <Download className="w-4 h-4" /> Dossier
+              </button>
+            </div>
+          </div>
+
+          {/* BEAUTIFUL CARD GRID INSTEAD OF TABLE */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {nodes.map(n => (
+              <div key={n.id} className="p-6 rounded-2xl bg-gradient-to-br from-white/[0.04] to-transparent border border-white/[0.08] hover:border-white/[0.2] transition-all hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(0,0,0,0.5)] group relative overflow-hidden">
+                {/* Accent Glow based on node type */}
+                <div className="absolute top-0 left-0 w-full h-1" style={{ backgroundColor: getNodeColor(n.label) }}></div>
+                
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-black/50 border border-white/10 flex items-center justify-center shadow-inner" style={{ color: getNodeColor(n.label) }}>
+                    <Server className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold block mb-0.5">{n.label}</span>
+                    <h3 className="text-sm font-bold text-white truncate max-w-[200px]" title={n.name}>{n.name}</h3>
+                  </div>
+                </div>
+
+                <div className="space-y-3 pt-4 border-t border-white/[0.05]">
+                  {Object.entries(n.properties || {}).map(([key, value]) => (
+                    <div key={key} className="flex flex-col">
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider">{key.replace(/_/g, ' ')}</span>
+                      <span className="text-xs text-slate-300 font-mono break-all">{String(value)}</span>
                     </div>
                   ))}
+                  {(!n.properties || Object.keys(n.properties).length === 0) && (
+                    <span className="text-xs text-slate-600 italic">No extended properties.</span>
+                  )}
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* Fallback for other aesthetic tabs (Identity Management, Secure Drop, etc) */}
-          {['Identity Management', 'Anonymize', 'Obfuscation', 'Encryption', 'Secure Drop'].includes(activeTab) && (
-            <div className="h-[70vh] flex flex-col items-center justify-center text-center animate-in fade-in zoom-in-95 duration-700">
-              <Lock className="w-16 h-16 text-zinc-800 mb-6 drop-shadow-[0_0_20px_rgba(0,0,0,1)]" />
-              <h2 className="text-2xl font-light text-zinc-300 tracking-[0.2em] uppercase">{activeTab}</h2>
-              <p className="text-xs text-zinc-600 font-mono mt-4 uppercase tracking-widest max-w-md">
-                Subsystem offline or requires elevated cryptographic clearance. Access restricted by DeepTrace Core.
-              </p>
-            </div>
-          )}
-
+            ))}
+          </div>
         </div>
-      </main>
+      )}
+
+      {/* ========================================================
+          PAGE 4: 2D/3D RELATIONSHIP GRAPH
+         ======================================================== */}
+      {currentPage === 'graph' && (
+        <div className="flex-1 max-w-7xl w-full mx-auto p-8 space-y-4 flex flex-col animate-in fade-in duration-300 z-10">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+              Threat Actor Topology <span className="text-[10px] px-2 py-1 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 uppercase tracking-widest">Live AuraDB Orbit</span>
+            </h2>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setZoom(prev => Math.min(prev * 1.25, 4.5))} className="p-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-white transition hover:scale-105 active:scale-95"><ZoomIn className="w-4 h-4" /></button>
+              <button onClick={() => setZoom(prev => Math.max(prev * 0.8, 0.3))} className="p-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-white transition hover:scale-105 active:scale-95"><ZoomOut className="w-4 h-4" /></button>
+              <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="p-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-white transition hover:scale-105 active:scale-95"><RotateCcw className="w-4 h-4" /></button>
+            </div>
+          </div>
+          <div
+            ref={graphContainerRef}
+            className="flex-1 min-h-[650px] rounded-3xl bg-[#02040a] border border-white/[0.08] overflow-hidden relative shadow-[0_0_50px_rgba(0,0,0,0.8)] cursor-grab active:cursor-grabbing select-none"
+            onWheel={handleWheel} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
+          >
+            <svg viewBox="0 0 1200 800" className="w-full h-full pointer-events-none">
+              <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`} className="pointer-events-auto">
+                <circle cx="600" cy="400" r="140" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="1" strokeDasharray="4 4" />
+                <circle cx="600" cy="400" r="270" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="1" strokeDasharray="4 4" />
+                <circle cx="600" cy="400" r="380" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="1" strokeDasharray="4 4" />
+                <circle cx="600" cy="400" r="470" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="1" strokeDasharray="4 4" />
+                {edges.map(e => {
+                  const s = nodeMap.get(e.source); const t = nodeMap.get(e.target);
+                  if (!s || !t) return null;
+                  return <line key={e.id} x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke="rgba(6,182,212,0.2)" strokeWidth="1.5" />;
+                })}
+                {nodes.map(n => {
+                  const isPrimary = ['HiddenService', 'ThreatActor', 'ClearnetDomain'].includes(n.label);
+                  const radius = isPrimary ? 7 : 4.5;
+                  const color = getNodeColor(n.label);
+                  const isSelected = selectedNode?.id === n.id;
+                  return (
+                    <g key={n.id} transform={`translate(${n.x}, ${n.y})`} className="cursor-pointer transition-transform duration-200 hover:scale-125" onClick={(e) => { e.stopPropagation(); setSelectedNode(n); }}>
+                      {isPrimary && <circle r={radius * 3} fill={color} opacity="0.15" className="animate-pulse" />}
+                      {isSelected && <circle r={radius * 4} fill="none" stroke={color} strokeWidth="2" strokeDasharray="3 3" className="animate-[spin_4s_linear_infinite]" />}
+                      <circle r={radius} fill={color} opacity="0.95" filter="drop-shadow(0 0 5px rgba(0,0,0,0.8))" />
+                      {(isPrimary || isSelected) && (
+                        <text y={20} fill={isSelected ? '#fff' : '#94a3b8'} fontSize="9" fontFamily="monospace" textAnchor="middle" opacity="0.9" fontWeight={isSelected ? 'bold' : 'normal'}>
+                          {n.name.length > 22 && !isSelected ? n.name.slice(0, 22) + '...' : n.name}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+              </g>
+            </svg>
+            {selectedNode && (
+              <div className="absolute top-6 left-6 w-80 bg-black/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 animate-in slide-in-from-left-4 fade-in">
+                <div className="flex items-start justify-between mb-5 border-b border-white/10 pb-4">
+                  <div>
+                    <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1 block" style={{ color: getNodeColor(selectedNode.label) }}>{selectedNode.label}</span>
+                    <h4 className="text-base font-bold text-white break-words leading-tight">{selectedNode.name}</h4>
+                  </div>
+                  <button onClick={() => setSelectedNode(null)} className="text-slate-500 hover:text-white transition-colors"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="space-y-4">
+                  {Object.entries(selectedNode.properties || {}).map(([k, v]) => (
+                    <div key={k} className="flex flex-col">
+                      <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-0.5">{k.replace(/_/g, ' ')}</span>
+                      <span className="text-sm text-slate-200 font-mono break-all bg-white/[0.03] p-2 rounded-lg border border-white/[0.05]">{String(v)}</span>
+                    </div>
+                  ))}
+                  {(!selectedNode.properties || Object.keys(selectedNode.properties).length === 0) && <span className="text-sm text-slate-500 italic">No extended properties.</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          PAGE 5: RAG KNOWLEDGE INTAKE
+         ======================================================== */}
+      {currentPage === 'rag' && (
+        <div className="flex-1 max-w-7xl w-full mx-auto p-8 space-y-8 animate-in fade-in duration-300 z-10">
+          <div>
+            <h2 className="text-3xl font-bold text-white tracking-tight">Knowledge Intake & Semantic Store</h2>
+            <p className="text-sm text-slate-400 mt-2">Ingest threat actor TTPs, correlate raw reports, and vectorize through Gemini embeddings.</p>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+            <div className="p-8 rounded-3xl bg-white/[0.02] border border-white/[0.08] shadow-2xl">
+              <span className="text-xs font-bold text-cyan-400 uppercase tracking-widest block mb-6 flex items-center gap-2"><Terminal className="w-4 h-4" /> Submit Unstructured Intelligence</span>
+              <form onSubmit={handleFeedRAG} className="space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Attributed Threat Actor</label>
+                    <input type="text" value={newTacticActor} onChange={(e) => setNewTacticActor(e.target.value)} placeholder="e.g. LockBit" className="w-full bg-black/50 border border-white/10 rounded-xl p-3.5 text-sm text-white focus:outline-none focus:border-cyan-500 transition-colors" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Intelligence Category</label>
+                    <div className="relative">
+                      <select value={newTacticCategory} onChange={(e) => setNewTacticCategory(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded-xl p-3.5 text-sm text-white focus:outline-none focus:border-cyan-500 appearance-none cursor-pointer" required>
+                        <option value="" disabled className="text-slate-500">Select Known Category...</option>
+                        {THREAT_CATEGORIES.map(c => <option key={c} value={c} className="bg-slate-900 text-white">{c}</option>)}
+                        <option value="CUSTOM" className="bg-cyan-900 text-cyan-100 font-bold">➕ Create New Custom Category...</option>
+                      </select>
+                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                    </div>
+                  </div>
+                </div>
+                {newTacticCategory === 'CUSTOM' && (
+                  <div className="space-y-2 animate-in slide-in-from-top-2">
+                    <label className="text-[10px] text-cyan-400 uppercase tracking-widest font-bold">Define New Category Name</label>
+                    <input type="text" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} placeholder="Type new category..." className="w-full bg-cyan-950/20 border border-cyan-500/40 rounded-xl p-3.5 text-sm text-white focus:outline-none focus:border-cyan-400" required />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <label className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Raw Intelligence Dossier</label>
+                  <textarea rows={6} value={newTacticContent} onChange={(e) => setNewTacticContent(e.target.value)} placeholder="Paste unformatted technical reports, IOCs, server logs..." className="w-full bg-black/50 border border-white/10 rounded-xl p-4 text-sm text-white focus:outline-none focus:border-cyan-500 resize-none" required />
+                </div>
+                <button type="submit" disabled={backendStatus !== 'ready' || !newTacticContent || (!newTacticCategory && !customCategory)} className="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-sm tracking-wider uppercase transition-all disabled:opacity-50 hover:scale-[1.02] active:scale-95 shadow-[0_0_20px_rgba(6,182,212,0.4)] flex items-center justify-center gap-2">
+                  <Database className="w-4 h-4" /> {isIngestingTactic ? 'Vectorizing Embeddings...' : 'Vectorize & Ingest to RAG Store'}
+                </button>
+              </form>
+            </div>
+            <div className="space-y-4">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block">Indexed TTP Context Cards</span>
+              <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 pb-10">
+                {ragResults.map(r => (
+                  <div key={r.id} className="p-6 rounded-2xl bg-white/[0.02] border border-white/[0.08] hover:bg-white/[0.05] transition-all group">
+                    <div className="flex items-start justify-between mb-3">
+                      <h4 className="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors pr-4">{r.title}</h4>
+                      <span className="text-[9px] px-2.5 py-1 rounded-md bg-white/[0.05] border border-white/10 text-slate-300 font-bold uppercase tracking-wider shrink-0">{r.category}</span>
+                    </div>
+                    <p className="text-sm text-slate-400 leading-relaxed">{r.content}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
