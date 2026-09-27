@@ -23,9 +23,7 @@ import {
   Zap,
   Network,
   Fingerprint,
-  BookOpen,
-  Sliders,
-  Check
+  Sliders
 } from 'lucide-react';
 
 const PRESET_TARGETS = [
@@ -62,7 +60,6 @@ const INITIAL_GRAPH_EDGES = [
 ];
 
 export default function App() {
-  // Navigation: 'landing' | 'unmasker' | 'intel' | 'graph' | 'stylometry' | 'rag'
   const [currentPage, setCurrentPage] = useState('landing');
   const [apiBaseUrl] = useState('https://dark-web-threat-detector.onrender.com/api');
   const [backendStatus, setBackendStatus] = useState('checking');
@@ -74,7 +71,7 @@ export default function App() {
   const [scanResult, setScanResult] = useState(null);
   const [scanLogs, setScanLogs] = useState([]);
 
-  // Intel Page State (Active Category Anchor)
+  // Intel Page State
   const [activeCategory, setActiveCategory] = useState(null);
 
   // Stylometry State
@@ -147,14 +144,12 @@ export default function App() {
             const centerX = 650;
             const centerY = 450;
 
-            // Video-style clustering (Services as hubs, Clearnet & Leaves radiating outwards)
             const hubs = data.nodes.filter(n => ['HiddenService', 'ThreatActor'].includes(n.label));
             const leaves = data.nodes.filter(n => !['HiddenService', 'ThreatActor'].includes(n.label));
 
             const positionedNodes = [];
             const hubMap = new Map();
 
-            // Position Hub Nodes in a central ring
             hubs.forEach((hub, idx) => {
               const angle = (idx / (hubs.length || 1)) * 2 * Math.PI;
               const radius = 180 + (idx % 2 === 0 ? 30 : -25);
@@ -164,7 +159,6 @@ export default function App() {
               positionedNodes.push({ ...hub, x, y });
             });
 
-            // Position Leaf nodes around the nearest hub or outer constellation
             leaves.forEach((leaf, idx) => {
               const connectedEdge = data.edges.find(e => e.target === leaf.id || e.source === leaf.id);
               const parentHubId = connectedEdge ? (connectedEdge.source === leaf.id ? connectedEdge.target : connectedEdge.source) : null;
@@ -316,18 +310,17 @@ export default function App() {
 
   const getNodeColor = (label) => {
     switch (label) {
-      case 'ThreatActor': return '#ef4444'; // Red
-      case 'HiddenService': return '#06b6d4'; // Cyan
-      case 'ClearnetDomain': return '#8b5cf6'; // Ultraviolet
-      case 'ClearnetIP': return '#f59e0b'; // Gold
-      case 'FaviconHash': return '#10b981'; // Emerald
-      default: return '#64748b'; // Slate
+      case 'ThreatActor': return '#ef4444'; 
+      case 'HiddenService': return '#06b6d4'; 
+      case 'ClearnetDomain': return '#8b5cf6'; 
+      case 'ClearnetIP': return '#f59e0b'; 
+      case 'FaviconHash': return '#10b981'; 
+      default: return '#64748b'; 
     }
   };
 
   const nodeMap = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
 
-  // Group nodes by Category for the Intel Page with instant smooth-scrolling
   const groupedCategories = useMemo(() => {
     const groups = {};
     nodes.forEach(n => {
@@ -556,14 +549,14 @@ export default function App() {
       )}
 
       {/* ========================================================
-          PAGE 3: EXTRACTED INTEL (INTERACTIVE CATEGORIES & SCROLL)
+          PAGE 3: EXTRACTED INTEL (INTERACTIVE CATEGORIES)
          ======================================================== */}
       {currentPage === 'intel' && (
         <div className="flex-1 max-w-7xl w-full mx-auto p-8 space-y-8 animate-in fade-in duration-300 z-10">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.06] pb-6">
             <div>
               <h2 className="text-3xl font-bold text-white tracking-tight">Intelligence Database</h2>
-              <p className="text-sm text-slate-400 mt-2">Click any discovered category to jump directly to its extracted entities[cite: 14].</p>
+              <p className="text-sm text-slate-400 mt-2">Click any discovered category to jump directly to its extracted entities.</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <button onClick={handleExportCSV} className="px-4 py-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2 transition hover:scale-105 active:scale-95">
@@ -580,10 +573,10 @@ export default function App() {
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 items-start">
             
-            {/* Left Panel: INTERACTIVE CATEGORIES[cite: 14] */}
+            {/* Left Panel: INTERACTIVE CATEGORIES */}
             <div className="md:col-span-1 space-y-3 sticky top-20">
               <h3 className="text-sm font-bold text-white uppercase tracking-widest border-b border-white/10 pb-2 flex items-center justify-between">
-                <span>Discovered Categories</span>[cite: 14]
+                <span>Discovered Categories</span>
                 <span className="text-[10px] text-slate-500 font-mono">Jump to</span>
               </h3>
               
@@ -614,8 +607,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* Right Panel: GROUPED AURA DB ENTITY CARDS[cite: 14] */}
-            <div className="md:col-span-3 space-y-8 max-h-[720px] overflow-y-auto pr-3 pb-20">
+            {/* Right Panel: GROUPED AURA DB ENTITY CARDS */}
+            <div className="md:col-span-3 space-y-8 max-h-[720px] overflow-y-auto pr-3 pb-20 scroll-smooth">
               {Object.keys(groupedCategories).map((cat) => (
                 <div key={cat} id={`cat-anchor-${cat}`} className="space-y-4 pt-2">
                   <div className="flex items-center gap-3 border-b border-white/10 pb-2">
@@ -662,7 +655,7 @@ export default function App() {
       )}
 
       {/* ========================================================
-          PAGE 4: 2D VISUALIZATION GRAPH (VIDEO ARCHITECTURE)[cite: 1]
+          PAGE 4: 2D VISUALIZATION GRAPH (NO HOVER WIGGLE)
          ======================================================== */}
       {currentPage === 'graph' && (
         <div className="flex-1 max-w-7xl w-full mx-auto p-8 space-y-4 flex flex-col animate-in fade-in duration-300 z-10">
@@ -671,7 +664,7 @@ export default function App() {
               <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
                 2D Threat Actor Cluster Network <span className="text-[10px] px-2 py-1 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 uppercase tracking-widest">Live AuraDB Graph</span>
               </h2>
-              <p className="text-xs text-slate-400 font-mono mt-1">Interconnected hubs and infrastructure endpoints (Video 2D Topology)[cite: 1]</p>
+              <p className="text-xs text-slate-400 font-mono mt-1">Interconnected hubs and infrastructure endpoints</p>
             </div>
             
             <div className="flex items-center gap-2">
@@ -686,7 +679,7 @@ export default function App() {
             className="flex-1 min-h-[660px] rounded-3xl bg-[#02040a] border border-white/[0.08] overflow-hidden relative shadow-[0_0_50px_rgba(0,0,0,0.8)] cursor-grab active:cursor-grabbing select-none"
             onWheel={handleWheel} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
           >
-            {/* Visual Legend Overlay[cite: 1] */}
+            {/* Visual Legend Overlay */}
             <div className="absolute top-6 right-6 p-4 rounded-2xl bg-black/70 backdrop-blur-md border border-white/10 text-xs font-mono space-y-2 pointer-events-none z-20">
               <span className="text-[10px] text-slate-500 uppercase tracking-widest block font-bold mb-1">Graph Legend</span>
               <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-[#ef4444]"></span><span>Threat Actor / Syndicate</span></div>
@@ -710,14 +703,14 @@ export default function App() {
                   return <line key={e.id} x1={s.x} y1={s.y} x2={t.x} y2={t.y} stroke="rgba(6,182,212,0.22)" strokeWidth="1.2" />;
                 })}
 
-                {/* Nodes */}
+                {/* Nodes (REMOVED HOVER SCALE TO PREVENT WIGGLE) */}
                 {nodes.map(n => {
                   const isPrimary = ['HiddenService', 'ThreatActor', 'ClearnetDomain'].includes(n.label);
                   const radius = isPrimary ? 8 : 4.5;
                   const color = getNodeColor(n.label);
                   const isSelected = selectedNode?.id === n.id;
                   return (
-                    <g key={n.id} transform={`translate(${n.x}, ${n.y})`} className="cursor-pointer transition-transform duration-200 hover:scale-125" onClick={(e) => { e.stopPropagation(); setSelectedNode(n); }}>
+                    <g key={n.id} transform={`translate(${n.x}, ${n.y})`} className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setSelectedNode(n); }}>
                       {isPrimary && <circle r={radius * 2.8} fill={color} opacity="0.15" className="animate-pulse" />}
                       {isSelected && <circle r={radius * 3.5} fill="none" stroke={color} strokeWidth="2" strokeDasharray="3 3" className="animate-[spin_4s_linear_infinite]" />}
                       <circle r={radius} fill={color} opacity="0.95" filter="drop-shadow(0 0 5px rgba(0,0,0,0.8))" />
@@ -732,7 +725,7 @@ export default function App() {
             </svg>
 
             {selectedNode && (
-              <div className="absolute top-6 left-6 w-80 bg-black/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 animate-in slide-in-from-left-4 fade-in">
+              <div className="absolute top-6 left-6 w-80 bg-black/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 animate-in slide-in-from-left-4 fade-in z-30">
                 <div className="flex items-start justify-between mb-5 border-b border-white/10 pb-4">
                   <div>
                     <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1 block" style={{ color: getNodeColor(selectedNode.label) }}>{selectedNode.label}</span>
@@ -766,7 +759,6 @@ export default function App() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-            {/* Input Form */}
             <div className="p-8 rounded-3xl bg-white/[0.02] border border-white/[0.08] shadow-2xl space-y-6">
               <span className="text-xs font-bold text-cyan-400 uppercase tracking-widest block flex items-center gap-2">
                 <Sliders className="w-4 h-4"/> Stylistic Profile Matching
@@ -809,7 +801,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Results Card */}
             <div className="p-8 rounded-3xl bg-white/[0.02] border border-white/[0.08] shadow-2xl flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-6">
@@ -823,7 +814,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Individual Metric Breakdown Bars */}
                 <div className="space-y-5">
                   {[
                     { label: 'Character 4-Gram Similarity (Jaccard Index)', score: stylometryResult.component_scores.character_ngram_similarity },
@@ -837,10 +827,7 @@ export default function App() {
                         <span className="text-cyan-300 font-bold">{item.score}%</span>
                       </div>
                       <div className="h-2 w-full bg-white/[0.05] rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-700"
-                          style={{ width: `${item.score}%` }}
-                        ></div>
+                        <div className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-700" style={{ width: `${item.score}%` }}></div>
                       </div>
                     </div>
                   ))}
