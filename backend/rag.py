@@ -115,7 +115,7 @@ class OSINTKnowledgeRAG:
         if self.gemini_client:
             try:
                 response = self.gemini_client.models.embed_content(
-                    model="text-embedding-004",
+                    model="embedding-001",
                     contents=content
                 )
                 if response and response.embeddings:
