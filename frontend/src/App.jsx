@@ -8,7 +8,8 @@ import {
   Terminal,
   Crosshair,
   Radar,
-  ChevronDown
+  ChevronDown,
+  Database
 } from 'lucide-react';
 
 const INITIAL_GRAPH_NODES = [
