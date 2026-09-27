@@ -325,7 +325,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-sm font-bold tracking-wider text-white flex items-center gap-2">
-                DEEPTRACE <span className="hidden sm:inline">AI</span>
+                DEEPTRACE AI
               </h1>
             </div>
           </div>
