@@ -61,7 +61,80 @@ DB_PATH = os.getenv("SQLITE_DB_PATH", "deep_trace.db")
 NEO4J_URI = os.getenv("NEO4J_URI")
 NEO4J_USERNAME = os.getenv("NEO4J_USERNAME", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+# In backend/main.py
 
+@app.get("/api/test-neo4j", tags=["Database Diagnostics"])
+def test_neo4j_connection():
+    """Verifies live connection and counts total nodes in Neo4j AuraDB."""
+    if not (NEO4J_URI and NEO4J_PASSWORD):
+        return {
+            "status": "FAIL",
+            "message": "NEO4J_URI or NEO4J_PASSWORD missing from environment variables.",
+            "mode": "SQLite Fallover Active"
+        }
+
+    try:
+        from neo4j import GraphDatabase
+        driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
+        
+        # Test routing and TLS handshake
+        driver.verify_connectivity()
+
+        # Query node count
+        with driver.session() as session:
+            result = session.run("MATCH (n) RETURN count(n) AS total_nodes")
+            count = result.single()["total_nodes"]
+
+        driver.close()
+        return {
+            "status": "CONNECTED",
+            "database": "Neo4j AuraDB",
+            "uri": NEO4J_URI,
+            "total_nodes": count,
+            "live": True
+        }
+    except Exception as e:
+        return {
+            "status": "CONNECTION_ERROR",
+            "error_detail": str(e),
+            "troubleshooting": [
+                "Verify NEO4J_URI starts with 'neo4j+s://'",
+                "Check whether your free AuraDB instance is paused in console.neo4j.io",
+                "Ensure username is typically 'neo4j' unless renamed"
+            ]
+        }
+
+
+@app.post("/api/test-neo4j/seed-node", tags=["Database Diagnostics"])
+def create_test_node(alias: str = "TestActor_LockBit"):
+    """Creates a sample ThreatActor node and reads it back from Neo4j."""
+    if not (NEO4J_URI and NEO4J_PASSWORD):
+        raise HTTPException(status_code=500, detail="Neo4j credentials not configured.")
+
+    try:
+        from neo4j import GraphDatabase
+        driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
+
+        with driver.session() as session:
+            # Create/Merge test node
+            cypher_create = """
+            MERGE (a:ThreatActor {name: $alias})
+            ON CREATE SET a.source = 'Render Swagger Test', a.created_at = timestamp()
+            RETURN a.name AS name, a.source AS source
+            """
+            created_record = session.run(cypher_create, alias=alias).single()
+
+        driver.close()
+        return {
+            "status": "SUCCESS",
+            "created_node": {
+                "label": "ThreatActor",
+                "name": created_record["name"],
+                "source": created_record["source"]
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Neo4j Transaction Failed: {str(e)}")
 
 def get_db_connection() -> sqlite3.Connection:
     """Creates a thread-safe connection to the local SQLite database."""
