@@ -62,7 +62,7 @@ const INITIAL_GRAPH_EDGES = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [apiBaseUrl, setApiBaseUrl] = useState('https://dark-web-threat-detector.onrender.com/api');
+  const [apiBaseUrl, setApiBaseUrl] = useState('https://dark-web-threat-detector.onrender.com/api/');
   const [showSettings, setShowSettings] = useState(false);
   const [copiedHash, setCopiedHash] = useState(false);
 
