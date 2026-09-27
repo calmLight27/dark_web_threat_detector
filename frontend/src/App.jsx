@@ -325,7 +325,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-sm font-bold tracking-wider text-white flex items-center gap-2">
-                DEEPTRACE <span className="hidden sm:inline">AI</span> <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono">SIH'26</span>
+                DEEPTRACE <span className="hidden sm:inline">AI</span>
               </h1>
             </div>
           </div>
