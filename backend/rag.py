@@ -99,7 +99,7 @@ class OSINTKnowledgeRAG:
         extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         if not doc_id:
-            doc_id = f"doc_{abs(hash(content + threat_actor))[:10]}"
+            doc_id = f"doc_{str(abs(hash(content + threat_actor)))[:10]}"
 
         metadata = {
             "threat_actor": threat_actor,
