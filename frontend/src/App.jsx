@@ -7,226 +7,6 @@ import {
   Activity,
   Terminal,
   Crosshair,
-  Network, // Used for the Tree icon
-  ChevronDown,
-  Database,
-  X,
-  Layers,
-  ArrowRight,
-  FileSpreadsheet,
-  Code,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  CheckCircle2,
-  Sparkles,
-  Server,
-  Zap,
-  Fingerprint,
-  Share2
-} from 'lucide-react';
-
-const PRESET_TARGETS = [
-  { name: 'DuckDuckGo Mirror', onion: 'duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion', fault: 'Verified Public Mirror', badge: 'Mirror Match' },
-  { name: 'ProPublica SecureDrop', onion: 'p53lf57qovyuvwsc6xnrppyply3vtqm7l6pcobkmyqsiofyeznfu5uqd.onion', fault: 'Mirror certificate leak', badge: 'SSL Leak' },
-  { name: 'LockBit 3.0 Syndicate', onion: 'lockbit3z7y2x3sjasowoarfbgcmvfimaftt6twagswzczad234567d.onion', fault: 'X.509 SAN Certificate Domain Leak', badge: 'Critical OPSEC' },
-  { name: 'BBC World News Tor', onion: 'bbcnewsd73hkzno2ini43t4gblxvycyac5m4gahflqbufrcydqi5cqyd.onion', fault: 'HTTP Content-Security-Policy Domain Leak', badge: 'Header Correlation' },
-  { name: 'AlphaBay Market Node', onion: 'alphabay2x3sjasowoarfbgcmvfimaftt6twagswzczad234567234567d.onion', fault: 'HTTP ETag Header Match across CDN', badge: 'ETag Tracking' },
-  { name: 'Volt Typhoon C2 Relay', onion: 'volttyph2x3sjasowoarfbgcmvfimaftt6twagswzczad234567234567d.onion', fault: 'Favicon MurmurHash3 match on Shodan', badge: 'Favicon mmh3' }
-];
-
-const THREAT_CATEGORIES = [
-  "Infrastructure Fingerprinting",
-  "Ransomware Operations",
-  "APT C2 Overlap",
-  "Cryptographic Misconfiguration",
-  "Initial Access Brokers",
-  "Darknet Marketplace"
-];
-
-const INITIAL_GRAPH_NODES = [
-  { id: 'core', label: 'System', name: 'DeepTrace Core', properties: { status: 'Online', engine: 'TorClearnetUnmasker' } },
-  { id: 'db', label: 'Database', name: 'Neo4j AuraDB', properties: { status: 'Sync Ready', graph_model: 'Identity Nexus' } }
-];
-
-const INITIAL_GRAPH_EDGES = [
-  { id: 'init_edge', source: 'core', target: 'db', relationship: 'SYNCED_WITH' }
-];
-
-export default function App() {
-  const [currentPage, setCurrentPage] = useState('landing');
-  const [apiBaseUrl] = useState('https://dark-web-threat-detector.onrender.com/api');
-  const [backendStatus, setBackendStatus] = useState('checking');
-  const [wakingElapsed, setWakingElapsed] = useState(0);
-
-  // Unmasker State
-  const [targetUrl, setTargetUrl] = useState('duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion');
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanResult, setScanResult] = useState(null);
-  const [scanLogs, setScanLogs] = useState([]);
-
-  // RAG State
-  const [ragResults, setRagResults] = useState([
-    { id: 'tac_001', title: 'Favicon MurmurHash3 Tor-to-Clearnet Correlation', category: 'Infrastructure Fingerprinting', content: 'By calculating the 32-bit MurmurHash3 signature of /favicon.ico and querying Shodan, investigators map isolated onion proxies directly to clearnet IPs.' },
-    { id: 'tac_002', title: 'X.509 Subject Alternative Name Domain Leakage', category: 'Cryptographic Misconfiguration', content: 'Operators provisioning wildcard SSL certificates routinely include both internal Tor hidden service names and surface clearnet endpoints.' }
-  ]);
-  const [newTacticActor, setNewTacticActor] = useState('');
-  const [newTacticCategory, setNewTacticCategory] = useState('');
-  const [customCategory, setCustomCategory] = useState('');
-  const [newTacticContent, setNewTacticContent] = useState('');
-  const [isIngestingTactic, setIsIngestingTactic] = useState(false);
-
-  // Decision Tree State
-  const [nodes, setNodes] = useState(INITIAL_GRAPH_NODES);
-  const [edges, setEdges] = useState(INITIAL_GRAPH_EDGES);
-  const [selectedNode, setSelectedNode] = useState(null);
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOrigin, setDragOrigin] = useState({ x: 0, y: 0 });
-  const graphContainerRef = useRef(null);
-
-  useEffect(() => {
-    let pollInterval;
-    let timerInterval;
-    const pingBackend = async () => {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 4000);
-        const res = await fetch(`${apiBaseUrl}/health`, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        setBackendStatus(res.ok ? 'ready' : 'waking');
-      } catch (err) {
-        setBackendStatus('waking');
-      }
-    };
-    pingBackend();
-    pollInterval = setInterval(pingBackend, 3500);
-    timerInterval = setInterval(() => setWakingElapsed((prev) => prev + 1), 1000);
-    return () => { clearInterval(pollInterval); clearInterval(timerInterval); };
-  }, [apiBaseUrl]);
-
-  // Load ML Decision Tree Layout
-  useEffect(() => {
-    async function loadGraphData() {
-      try {
-        const res = await fetch(`${apiBaseUrl}/graph`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.nodes?.length > 0) {
-            const width = 1600; // Wider canvas for tree spread
-            
-            // Hierarchical Grouping for Decision Tree
-            const levels = {
-              Root: data.nodes.filter(n => ['System', 'Database'].includes(n.label)),
-              Actors: data.nodes.filter(n => ['ThreatActor'].includes(n.label)),
-              Services: data.nodes.filter(n => ['HiddenService'].includes(n.label)),
-              Domains: data.nodes.filter(n => ['ClearnetDomain'].includes(n.label)),
-              Leaves: data.nodes.filter(n => ['ClearnetIP', 'FaviconHash'].includes(n.label) || !['System', 'Database', 'ThreatActor', 'HiddenService', 'ClearnetDomain'].includes(n.label))
-            };
-
-            const positionedNodes = [];
-            let currentY = 100;
-            const ySpacing = 180; // Vertical distance between tree branches
-
-            Object.keys(levels).forEach((levelKey) => {
-              const levelNodes = levels[levelKey];
-              const count = levelNodes.length;
-              if (count === 0) return;
-              
-              const spacingX = width / (count + 1);
-              levelNodes.forEach((n, idx) => {
-                positionedNodes.push({
-                  ...n,
-                  x: spacingX * (idx + 1),
-                  y: currentY,
-                });
-              });
-              currentY += ySpacing;
-            });
-
-            setNodes(positionedNodes);
-            if (data.edges) setEdges(data.edges);
-          }
-        }
-      } catch (err) {}
-    }
-    loadGraphData();
-  }, [apiBaseUrl, backendStatus]);
-
-  const handleExecuteScan = async (overrideTarget) => {
-    const rawTarget = (overrideTarget || targetUrl).trim();
-    if (!rawTarget) return;
-    if (overrideTarget) setTargetUrl(overrideTarget);
-
-    setIsScanning(true);
-    setScanResult(null);
-    setScanLogs([`[INIT] Engaging Tor relay proxy pipeline for target: ${rawTarget}`]);
-
-    const steps = [
-      "[TCP] Negotiating rendezvous circuit across onion directory...",
-      "[SSL] Probing TLS handshake and parsing x509v3 certificates...",
-      "[HTTP] Intercepting cache tokens and server identity banners...",
-      "[GRAPH] Querying Neo4j AuraDB cluster for correlated entities..."
-    ];
-
-    let stepIdx = 0;
-    const logTimer = setInterval(() => {
-      if (stepIdx < steps.length) {
-        setScanLogs(prev => [...prev, steps[stepIdx]]);
-        stepIdx++;
-      }
-    }, 450);
-
-    try {
-      const response = await fetch(`${apiBaseUrl}/scan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: rawTarget, use_gateway_bypass: true }) });
-      if (response.ok) {
-        const data = await response.json();
-        setTimeout(() => {
-          clearInterval(logTimer);
-          setScanLogs(prev => [...prev, `[RESOLVED] Correlation verified. Clearnet Domain: ${data.leaked_clearnet_domain || data.clearnet_domain || 'Protected'}`]);
-          setTimeout(() => setScanResult(data), 600);
-        }, 1200);
-      }
-    } catch (e) {
-      clearInterval(logTimer);
-      setScanLogs(prev => [...prev, "[FATAL] Tor prober timeout or host unreachable."]);
-    } finally {
-      setTimeout(() => setIsScanning(false), 2200);
-    }
-  };
-
-  const handleWheel = (e) => {
-    e.preventDefault();
-    if (!graphContainerRef.current) return;
-    const rect = graphContainerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left, mouseY = e.clientY - rect.top;
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-    const newZoom = Math.min(Math.max(0.3, zoom * zoomFactor), 4.5);
-    setPan({ x: mouseX - (mouseX - pan.x) * (newZoom / zoom), y: mouseY - (mouseY - pan.y) * (newZoom / zoom) });
-    setZoom(newZoom);
-  };
-  const handleMouseDown = (e) => { if (e.button !== 0) return; setIsDragging(true); setDragOrigin({ x: e.clientX - pan.x, y: e.clientY - pan.y }); };
-  const handleMouseMove = (e) => { if (!isDragging) return; setPan({ x: e.clientX - dragOrigin.x, y: eTo implement these updates, I have completely refactored the structural logic of the application. 
-
-Here are the specific upgrades made based on your instructions and the provided image:
-
-1. **Unmasker Details Re-Added:** Below the main "Identity Compromised" banner, I have reintroduced the 4-panel grid displaying the exact **Favicon Hash, Clearnet IPs, HTTP ETag, and Server Engine**. They are styled with sleek, glowing hover states to match the modern aesthetic.
-2. **ML Decision Tree Algorithm:** The orbital radial graph has been completely replaced with a top-down **Hierarchical Decision Tree** algorithm. It automatically sorts the Neo4j database into distinct machine-learning classification layers (Root Systems -> Hidden Services -> Clearnet Domains -> Leaf Nodes like IPs/Hashes) and draws them in a structured, zoomable tree. The tab has been renamed accordingly.
-3. **Intel Page Restructure:** The extracted intel page is now split into a dedicated **"Discovered Categories"** dashboard on the left, and a scrollable feed of **"AuraDB Entity Cards"** on the right, giving each unmasked website and IP its own highly detailed property space.
-
-Replace your entire `frontend/src/App.jsx` with this updated code:
-
-```jsx
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import {
-  ShieldAlert,
-  Search,
-  Download,
-  AlertTriangle,
-  Activity,
-  Terminal,
-  Crosshair,
   ChevronDown,
   Database,
   X,
@@ -273,7 +53,7 @@ const INITIAL_GRAPH_EDGES = [
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('landing');
-  const [apiBaseUrl] = useState('[https://dark-web-threat-detector.onrender.com/api](https://dark-web-threat-detector.onrender.com/api)');
+  const [apiBaseUrl] = useState('https://dark-web-threat-detector.onrender.com/api');
   const [backendStatus, setBackendStatus] = useState('checking');
   const [wakingElapsed, setWakingElapsed] = useState(0);
 
@@ -294,7 +74,7 @@ export default function App() {
   const [newTacticContent, setNewTacticContent] = useState('');
   const [isIngestingTactic, setIsIngestingTactic] = useState(false);
 
-  // Graph State (Now structured as a Tree)
+  // Graph State (Decision Tree)
   const [nodes, setNodes] = useState(INITIAL_GRAPH_NODES);
   const [edges, setEdges] = useState(INITIAL_GRAPH_EDGES);
   const [selectedNode, setSelectedNode] = useState(null);
@@ -426,8 +206,18 @@ export default function App() {
     setPan({ x: mouseX - (mouseX - pan.x) * (newZoom / zoom), y: mouseY - (mouseY - pan.y) * (newZoom / zoom) });
     setZoom(newZoom);
   };
-  const handleMouseDown = (e) => { if (e.button !== 0) return; setIsDragging(true); setDragOrigin({ x: e.clientX - pan.x, y: e.clientY - pan.y }); };
-  const handleMouseMove = (e) => { if (!isDragging) return; setPan({ x: e.clientX - dragOrigin.x, y: e.clientY - dragOrigin.y }); };
+
+  const handleMouseDown = (e) => { 
+    if (e.button !== 0) return; 
+    setIsDragging(true); 
+    setDragOrigin({ x: e.clientX - pan.x, y: e.clientY - pan.y }); 
+  };
+  
+  const handleMouseMove = (e) => { 
+    if (!isDragging) return; 
+    setPan({ x: e.clientX - dragOrigin.x, y: e.clientY - dragOrigin.y }); 
+  };
+  
   const handleMouseUp = () => setIsDragging(false);
 
   const handleFeedRAG = async (e) => {
